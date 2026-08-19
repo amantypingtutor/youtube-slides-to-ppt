@@ -4,3 +4,4 @@ yt-dlp
 python-pptx
 img2pdf
 pillow
+requests
