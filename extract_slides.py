@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import cv2
 import numpy as np
 import yt_dlp
@@ -8,51 +9,62 @@ from pptx.util import Inches
 import img2pdf
 import requests
 
+def clean_youtube_url(url):
+    """URL से फालतू ट्रैकिंग पैरामीटर्स हटाकर शुद्ध URL निकालता है"""
+    match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
+    if match:
+        video_id = match.group(1)
+        return f"https://www.youtube.com/watch?v={video_id}", video_id
+    return url, ""
+
 def get_stream_url(youtube_url):
-    """YouTube Stream URL via Multi-Client Bypass or Proxy fallback"""
-    # 1. Direct yt-dlp with TV/Web Embedded client bypass
+    clean_url, video_id = clean_youtube_url(youtube_url)
+    
+    # Method 1: yt-dlp with android_vr client (Bypasses Error 152)
     ydl_opts = {
         'format': 'best[height<=720]/best',
-        'quiet': True,
+        'quiet': False,
         'no_warnings': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['tv_embedded', 'web_embedded', 'android'],
-                'player_skip': ['configs', 'webpage']
+                'player_client': ['android_vr', 'web_safari', 'android_creator'],
+                'player_skip': ['webpage', 'configs']
             }
         }
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(youtube_url, download=False)
+            info = ydl.extract_info(clean_url, download=False)
             if 'url' in info:
+                print("Direct stream URL fetched successfully via android_vr client.")
                 return info['url']
     except Exception as e:
-        print(f"Direct stream failed, trying fallback: {e}")
+        print(f"Direct stream failed: {e}")
 
-    # 2. Invidious Proxy Stream Fallback (100% Bot-Bypass on Cloud)
-    video_id = youtube_url.split("v=")[-1].split("&")[0].split("?")[0].split("/")[-1]
-    instances = [
-        "https://inv.tux.pizza",
-        "https://invidious.nerdvpn.de",
-        "https://invidious.projectsegfau.lt"
+    # Method 2: Piped / Invidious API Public Fallbacks
+    piped_instances = [
+        "https://pipedapi.kavin.rocks",
+        "https://api.piped.privacydev.net",
+        "https://piped-api.lunar.icu"
     ]
     
-    for instance in instances:
+    for base in piped_instances:
         try:
-            api_url = f"{instance}/api/v1/videos/{video_id}"
-            res = requests.get(api_url, timeout=10).json()
-            formats = res.get('formatStreams', [])
-            if formats:
-                # 360p or 720p stream URL
-                return formats[-1]['url']
+            res = requests.get(f"{base}/streams/{video_id}", timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                streams = data.get('videoStreams', [])
+                for s in streams:
+                    if s.get('videoOnly') is False or s.get('format') == 'mp4':
+                        print(f"Fetched stream from Piped fallback: {base}")
+                        return s['url']
         except Exception:
             continue
 
-    raise RuntimeError("Could not retrieve stream URL. Bot block triggered on all endpoints.")
+    raise RuntimeError("Could not retrieve stream URL. All fallback endpoints were throttled.")
 
-def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=4, threshold=0.15):
+def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=5, threshold=0.15):
     os.makedirs(output_folder, exist_ok=True)
     stream_url = get_stream_url(youtube_url)
     
@@ -65,7 +77,7 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=4, t
     saved_images = []
     frame_idx = 0
 
-    print("Extracting slides from video...")
+    print("Extracting frames and comparing slides...")
     while cap.isOpened():
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
@@ -97,7 +109,7 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=4, t
 
 def save_outputs(images, ppt_path="output.pptx", pdf_path="output.pdf"):
     if not images:
-        print("No slides found.")
+        print("No unique slides found.")
         return
 
     # PPTX
@@ -115,10 +127,10 @@ def save_outputs(images, ppt_path="output.pptx", pdf_path="output.pdf"):
     with open(pdf_path, "wb") as f:
         f.write(img2pdf.convert(images))
 
-    print(f"Artifacts ready: {ppt_path} and {pdf_path}")
+    print(f"Generation Complete! Saved {ppt_path} and {pdf_path}")
 
 if __name__ == "__main__":
-    url = sys.argv[1] if len(sys.argv) > 1 else "https://youtu.be/EIhoVK88HOU"
+    url = sys.argv[1] if len(sys.argv) > 1 else "https://www.youtube.com/watch?v=EIhoVK88HOU"
     slides = extract_slides(url)
     save_outputs(slides)
     
