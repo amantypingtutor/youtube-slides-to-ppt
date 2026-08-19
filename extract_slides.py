@@ -9,8 +9,15 @@ import img2pdf
 
 def get_stream_url(youtube_url):
     ydl_opts = {
-        'format': 'best[height<=720]',
-        'quiet': True
+        'format': 'best[height<=720]/best',
+        'quiet': True,
+        'no_warnings': True,
+        # YouTube Bot Check बायपास करने के लिए क्लाइंट सेटिंग्स
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web_embedded']
+            }
+        }
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=False)
@@ -29,7 +36,7 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=3, t
     saved_images = []
     frame_idx = 0
 
-    print("Extracting slides...")
+    print("Extracting slides from stream...")
     while cap.isOpened():
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
@@ -61,7 +68,7 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=3, t
 
 def save_outputs(images, ppt_path="output.pptx", pdf_path="output.pdf"):
     if not images:
-        print("No slides found.")
+        print("No slides captured.")
         return
 
     # Create PPTX
@@ -79,10 +86,10 @@ def save_outputs(images, ppt_path="output.pptx", pdf_path="output.pdf"):
     with open(pdf_path, "wb") as f:
         f.write(img2pdf.convert(images))
 
-    print(f"Done! Created {ppt_path} and {pdf_path}")
+    print(f"Success! Created {ppt_path} and {pdf_path}")
 
 if __name__ == "__main__":
     url = sys.argv[1] if len(sys.argv) > 1 else "https://youtu.be/EIhoVK88HOU"
     slides = extract_slides(url)
     save_outputs(slides)
-  
+    
