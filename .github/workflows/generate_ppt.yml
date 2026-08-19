@@ -1,0 +1,39 @@
+name: Generate Slides from YouTube
+
+on:
+  workflow_dispatch:
+    inputs:
+      youtube_url:
+        description: 'YouTube Video URL'
+        required: true
+        default: 'https://youtu.be/EIhoVK88HOU'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Slide Extraction
+        run: |
+          python extract_slides.py "${{ github.event.inputs.youtube_url }}"
+
+      - name: Upload Output as Artifact (PPT & PDF)
+        uses: actions/upload-artifact@v4
+        with:
+          name: lecture-slides
+          path: |
+            output.pptx
+            output.pdf
+            
