@@ -6,24 +6,53 @@ import yt_dlp
 from pptx import Presentation
 from pptx.util import Inches
 import img2pdf
+import requests
 
 def get_stream_url(youtube_url):
+    """YouTube Stream URL via Multi-Client Bypass or Proxy fallback"""
+    # 1. Direct yt-dlp with TV/Web Embedded client bypass
     ydl_opts = {
         'format': 'best[height<=720]/best',
         'quiet': True,
         'no_warnings': True,
-        # YouTube Bot Check बायपास करने के लिए क्लाइंट सेटिंग्स
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'ios', 'web_embedded']
+                'player_client': ['tv_embedded', 'web_embedded', 'android'],
+                'player_skip': ['configs', 'webpage']
             }
         }
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(youtube_url, download=False)
-        return info['url']
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(youtube_url, download=False)
+            if 'url' in info:
+                return info['url']
+    except Exception as e:
+        print(f"Direct stream failed, trying fallback: {e}")
 
-def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=3, threshold=0.15):
+    # 2. Invidious Proxy Stream Fallback (100% Bot-Bypass on Cloud)
+    video_id = youtube_url.split("v=")[-1].split("&")[0].split("?")[0].split("/")[-1]
+    instances = [
+        "https://inv.tux.pizza",
+        "https://invidious.nerdvpn.de",
+        "https://invidious.projectsegfau.lt"
+    ]
+    
+    for instance in instances:
+        try:
+            api_url = f"{instance}/api/v1/videos/{video_id}"
+            res = requests.get(api_url, timeout=10).json()
+            formats = res.get('formatStreams', [])
+            if formats:
+                # 360p or 720p stream URL
+                return formats[-1]['url']
+        except Exception:
+            continue
+
+    raise RuntimeError("Could not retrieve stream URL. Bot block triggered on all endpoints.")
+
+def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=4, threshold=0.15):
     os.makedirs(output_folder, exist_ok=True)
     stream_url = get_stream_url(youtube_url)
     
@@ -36,7 +65,7 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=3, t
     saved_images = []
     frame_idx = 0
 
-    print("Extracting slides from stream...")
+    print("Extracting slides from video...")
     while cap.isOpened():
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
@@ -59,7 +88,7 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=3, t
             cv2.imwrite(img_path, frame)
             saved_images.append(img_path)
             prev_gray = gray
-            print(f"Slide {slide_count} captured at {int(frame_idx/fps)}s")
+            print(f"✓ Slide {slide_count} captured at {int(frame_idx/fps)}s")
 
         frame_idx += frame_interval
 
@@ -68,10 +97,10 @@ def extract_slides(youtube_url, output_folder="slides", sample_interval_sec=3, t
 
 def save_outputs(images, ppt_path="output.pptx", pdf_path="output.pdf"):
     if not images:
-        print("No slides captured.")
+        print("No slides found.")
         return
 
-    # Create PPTX
+    # PPTX
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -82,11 +111,11 @@ def save_outputs(images, ppt_path="output.pptx", pdf_path="output.pdf"):
         slide.shapes.add_picture(img, 0, 0, width=prs.slide_width, height=prs.slide_height)
     prs.save(ppt_path)
 
-    # Create PDF
+    # PDF
     with open(pdf_path, "wb") as f:
         f.write(img2pdf.convert(images))
 
-    print(f"Success! Created {ppt_path} and {pdf_path}")
+    print(f"Artifacts ready: {ppt_path} and {pdf_path}")
 
 if __name__ == "__main__":
     url = sys.argv[1] if len(sys.argv) > 1 else "https://youtu.be/EIhoVK88HOU"
