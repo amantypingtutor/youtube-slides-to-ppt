@@ -1,0 +1,6 @@
+opencv-python-headless
+numpy
+yt-dlp
+python-pptx
+img2pdf
+pillow
